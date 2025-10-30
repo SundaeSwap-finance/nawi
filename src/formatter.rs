@@ -1,7 +1,7 @@
 use amaru_kernel::{
-    Address, AssetName, Certificate, ComputeHash, DRep, Network, ScriptPurpose,
+    Address, AssetName, BigInt, Certificate, ComputeHash, DRep, Network, PlutusData, ScriptPurpose,
     ShelleyDelegationPart, ShelleyPaymentPart, StakeAddress, StakeCredential, StakePayload,
-    TransactionInput, to_cbor,
+    TransactionInput,
 };
 use amaru_plutus::script_context::{
     CurrencySymbol, DatumOption, Mint, Redeemers, Script, ScriptContextV3, TimeRange,
@@ -277,7 +277,7 @@ impl ReadableFormatter for DatumOption<'_> {
         match self {
             DatumOption::None => "None".to_string(),
             DatumOption::Hash(hash) => format!("Hash({})", hex::encode(hash)),
-            DatumOption::Inline(data) => format!("Inline({})", hex::encode(to_cbor(data))),
+            DatumOption::Inline(data) => format!("Inline({})", data.format_readable()),
         }
     }
 }
@@ -305,10 +305,7 @@ impl<'a> ReadableFormatter for Redeemers<'a, v3::ScriptPurpose<'a>> {
         for (i, (purpose, redeemer)) in self.0.iter().enumerate() {
             result.push_str(&format!("[{}] {}\n", i, purpose.format_readable()));
             result.push_str(&format!("    Index: {}\n", redeemer.index));
-            result.push_str(&format!(
-                "    Data: {}\n",
-                hex::encode(to_cbor(&redeemer.data))
-            ));
+            result.push_str(&format!("    Data: {}\n", redeemer.data.format_readable()));
             result.push_str(&format!(
                 "    Ex Units: {} steps, {} mem\n",
                 redeemer.ex_units.steps, redeemer.ex_units.mem
@@ -567,6 +564,105 @@ impl ReadableFormatter for StakeAddress {
         };
 
         format!("{} {{ {} }}", network, payload)
+    }
+}
+
+impl ReadableFormatter for PlutusData {
+    fn format_readable(&self) -> String {
+        format_plutus_data(self, 0)
+    }
+}
+
+fn format_plutus_data(data: &PlutusData, indent: usize) -> String {
+    let indent_str = "  ".repeat(indent);
+    let next_indent_str = "  ".repeat(indent + 1);
+
+    match data {
+        PlutusData::Constr(constr) => {
+            if constr.fields.is_empty() {
+                format!("Constr({}, [])", constr.tag)
+            } else if constr.fields.len() == 1 && is_simple(&constr.fields[0]) {
+                format!(
+                    "Constr({}, [{}])",
+                    constr.tag,
+                    format_plutus_data(&constr.fields[0], 0)
+                )
+            } else {
+                let fields = constr
+                    .fields
+                    .iter()
+                    .map(|f| format!("{}{}", next_indent_str, format_plutus_data(f, indent + 1)))
+                    .collect::<Vec<_>>()
+                    .join(",\n");
+                format!("Constr({}, [\n{}\n{}])", constr.tag, fields, indent_str)
+            }
+        }
+        PlutusData::Map(pairs) => {
+            if pairs.is_empty() {
+                "Map({})".to_string()
+            } else if pairs.len() == 1 && is_simple(&pairs[0].0) && is_simple(&pairs[0].1) {
+                format!(
+                    "Map({{ {} => {} }})",
+                    format_plutus_data(&pairs[0].0, 0),
+                    format_plutus_data(&pairs[0].1, 0)
+                )
+            } else {
+                let formatted_pairs = pairs
+                    .iter()
+                    .map(|(k, v)| {
+                        format!(
+                            "{}{} =>\n{}{}",
+                            next_indent_str,
+                            format_plutus_data(k, indent + 1),
+                            next_indent_str,
+                            format_plutus_data(v, indent + 1)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",\n");
+                format!("Map({{\n{}\n{}}})", formatted_pairs, indent_str)
+            }
+        }
+        PlutusData::Array(array) => {
+            if array.is_empty() {
+                "[]".to_string()
+            } else if array.len() <= 3 && array.iter().all(is_simple) {
+                let elements = array
+                    .iter()
+                    .map(|e| format_plutus_data(e, 0))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{}]", elements)
+            } else {
+                let elements = array
+                    .iter()
+                    .map(|e| format!("{}{}", next_indent_str, format_plutus_data(e, indent + 1)))
+                    .collect::<Vec<_>>()
+                    .join(",\n");
+                format!("[\n{}\n{}]", elements, indent_str)
+            }
+        }
+        PlutusData::BigInt(int) => match int {
+            BigInt::Int(i) => format!("Int({})", i.0),
+            BigInt::BigUInt(bytes) => {
+                format!("BigInt(+0x{})", hex::encode(bytes.to_vec()))
+            }
+            BigInt::BigNInt(bytes) => {
+                format!("BigUInt(-0x{})", hex::encode(bytes.to_vec()))
+            }
+        },
+        PlutusData::BoundedBytes(bytes) => {
+            format!("Bytes(0x{})", hex::encode(bytes.to_vec()))
+        }
+    }
+}
+
+fn is_simple(data: &PlutusData) -> bool {
+    match data {
+        PlutusData::BigInt(_) | PlutusData::BoundedBytes(_) => true,
+        PlutusData::Constr(constr) => constr.fields.is_empty(),
+        PlutusData::Map(pairs) => pairs.is_empty(),
+        PlutusData::Array(array) => array.is_empty(),
     }
 }
 
