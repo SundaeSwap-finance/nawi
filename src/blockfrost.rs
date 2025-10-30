@@ -23,6 +23,19 @@ impl Blockfrost {
         }
     }
 
+    pub async fn get_tip(&self) -> Result<u64> {
+        let response = self
+            .api
+            .blocks_latest()
+            .await
+            .context("failed to get tip")?;
+
+        response
+            .slot
+            .map(|slot| slot as u64)
+            .ok_or(anyhow!("no tip found for latest block"))
+    }
+
     pub async fn get_utxos(
         &self,
         inputs: &[TransactionInput],
@@ -46,30 +59,26 @@ impl Blockfrost {
             .api
             .transactions_cbor(&tx_hash)
             .await
-            .with_context(|| format!("Failed to fetch transaction {}", tx_hash))?;
+            .context(format!("Failed to fetch transaction {}", tx_hash))?;
 
-        let cbor_bytes = hex::decode(&response.cbor).with_context(|| {
-            format!(
-                "Invalid CBOR hex from Blockfrost for tranasction {}",
-                tx_hash
-            )
-        })?;
+        let cbor_bytes = hex::decode(&response.cbor).context(format!(
+            "Invalid CBOR hex from Blockfrost for tranasction {}",
+            tx_hash
+        ))?;
 
         let transaction: amaru_kernel::MintedTx<'_> = cbor::decode(&cbor_bytes)
-            .with_context(|| format!("Failed to decode transaction CBOR for {}", tx_hash))?;
+            .context(format!("Failed to decode transaction CBOR for {}", tx_hash))?;
 
         let output = transaction
             .transaction_body
             .outputs
             .get(input.index as usize)
-            .with_context(|| {
-                format!(
-                    "Invalid output index {} for transaction {}. Transaction has {} output(s)",
-                    input.index,
-                    tx_hash,
-                    transaction.transaction_body.outputs.len()
-                )
-            })?
+            .context(format!(
+                "Invalid output index {} for transaction {}. Transaction has {} output(s)",
+                input.index,
+                tx_hash,
+                transaction.transaction_body.outputs.len()
+            ))?
             .clone();
 
         let memoized_output = MemoizedTransactionOutput::try_from(output)

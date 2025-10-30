@@ -111,7 +111,7 @@ struct Args {
 
     /// Slot number of the transaction
     #[arg(short, long, value_name = "SLOT")]
-    slot: u64,
+    slot: Option<u64>,
 
     /// Output format of the ScriptContext
     #[arg(short, long, default_value = "both", value_name = "FORMAT")]
@@ -140,13 +140,18 @@ async fn main() -> Result<()> {
         )
     })?;
 
+    let slot = match args.slot {
+        Some(slot) => slot,
+        None => blockfrost.get_tip().await?,
+    };
+
     let (pretty_context, plutus_data) = build_script_context(
         args.plutus_version,
         &transaction,
         &utxos,
         redeemer,
         args.network,
-        args.slot,
+        slot,
     )?;
 
     match args.output {
