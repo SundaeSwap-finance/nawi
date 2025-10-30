@@ -1,6 +1,6 @@
-# Nawi
+# Nawi 👁️
 
-**Ñawi [nya-wi]** (Quechua: _eye_) is the "eye of Amaru".
+> **Ñawi [nya-wi]** (Quechua: _eye_) is the "eye of Amaru".
 
 Built on top of [Amaru](https://github.com/pragma-org/amaru), Nawi is a CLI tool which helps provide useful and human readable insight about the Cardano blockchain.
 
