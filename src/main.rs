@@ -265,7 +265,7 @@ fn build_script_context(
                 .context("Failed to construct PlutusV1 script context")?;
 
             Ok((
-                "Pretty print not implemented yet".to_string(),
+                script_context.format_readable(),
                 <ScriptContextV1 as ToPlutusData<1>>::to_plutus_data(&script_context),
             ))
         }

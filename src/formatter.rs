@@ -4,8 +4,8 @@ use amaru_kernel::{
     TransactionInput,
 };
 use amaru_plutus::script_context::{
-    CurrencySymbol, DatumOption, Mint, Redeemers, Script, ScriptContextV3, TimeRange,
-    TransactionOutput, TxInfoV3, Value, Withdrawals, v3,
+    CurrencySymbol, DatumOption, Mint, Redeemers, Script, ScriptContextV1, ScriptContextV3,
+    TimeRange, TransactionOutput, TxInfoV1, TxInfoV3, Value, Withdrawals, v1, v3,
 };
 use chrono::DateTime;
 use std::borrow::Cow;
@@ -74,6 +74,103 @@ impl ReadableFormatter for TxInfoV3<'_> {
         }
 
         output.push_str(&format!("\n  Fee: {} lovelace\n", self.fee));
+
+        output.push_str("\n  Minted Assets:\n");
+        for line in self.mint.format_readable().lines() {
+            output.push_str(&format!("    {}\n", line));
+        }
+
+        output.push_str(&format!(
+            "\n  Certificates: {} certificate(s)\n",
+            self.certificates.len()
+        ));
+        for (i, cert) in self.certificates.iter().enumerate() {
+            output.push_str(&format!("    [{}] ", i));
+            for (j, line) in cert.format_readable().lines().enumerate() {
+                if j == 0 {
+                    output.push_str(&format!("{}\n", line));
+                } else {
+                    output.push_str(&format!("        {}\n", line));
+                }
+            }
+        }
+
+        output.push_str(&format!(
+            "\n  Withdrawals: {} withdrawal(s)\n",
+            self.withdrawals.0.len()
+        ));
+        for line in self.withdrawals.format_readable().lines() {
+            output.push_str(&format!("    {}\n", line));
+        }
+
+        output.push_str("\n  Validity Range:\n");
+        for line in self.valid_range.format_readable().lines() {
+            output.push_str(&format!("    {}\n", line));
+        }
+
+        output.push_str(&format!(
+            "\n  Required Signers: {} signer(s)\n",
+            self.signatories.0.len()
+        ));
+        for (i, sig) in self.signatories.0.iter().enumerate() {
+            output.push_str(&format!("    [{}] {}\n", i, hex::encode(sig)));
+        }
+
+        output.push_str(&format!(
+            "\n  Redeemers: {} redeemer(s)\n",
+            self.redeemers.0.len()
+        ));
+        if !self.redeemers.0.is_empty() {
+            for line in self.redeemers.format_readable().lines() {
+                output.push_str(&format!("    {}\n", line));
+            }
+        }
+
+        output
+    }
+}
+
+impl ReadableFormatter for ScriptContextV1<'_> {
+    fn format_readable(&self) -> String {
+        let separator = "=".repeat(80);
+        format!(
+            "\n{}\nScript Context (Plutus V1)\n{}\n\nTransaction Info:\n{}\nScript Purpose:\n{}\n{}\n",
+            separator,
+            separator,
+            self.tx_info.format_readable(),
+            self.purpose.format_readable(),
+            separator
+        )
+    }
+}
+
+impl ReadableFormatter for TxInfoV1<'_> {
+    fn format_readable(&self) -> String {
+        let mut output = String::new();
+
+        output.push_str(&format!("  Transaction ID: {}\n", hex::encode(&self.id)));
+
+        output.push_str(&format!("\n  Inputs: {} input(s)\n", self.inputs.len()));
+        for (i, output_ref) in self.inputs.iter().enumerate() {
+            output.push_str(&format!(
+                "    [{}] {}\n",
+                i,
+                output_ref.input.format_readable()
+            ));
+            for line in output_ref.output.format_readable().lines() {
+                output.push_str(&format!("        {}\n", line));
+            }
+        }
+
+        output.push_str(&format!("\n  Outputs: {} output(s)\n", self.outputs.len()));
+        for (i, tx_output) in self.outputs.iter().enumerate() {
+            output.push_str(&format!("    [{}]\n", i));
+            for line in tx_output.format_readable().lines() {
+                output.push_str(&format!("        {}\n", line));
+            }
+        }
+
+        output.push_str(&format!("\n  Fee: {}\n", self.fee.format_readable()));
 
         output.push_str("\n  Minted Assets:\n");
         for line in self.mint.format_readable().lines() {
@@ -329,6 +426,47 @@ impl<'a> ReadableFormatter for v3::ScriptPurpose<'a> {
             v3::ScriptPurpose::Rewarding(_) => "Reward".to_string(),
             v3::ScriptPurpose::Voting(_) => "Voting".to_string(),
             v3::ScriptPurpose::Proposing(_, _) => "Proposing".to_string(),
+        }
+    }
+}
+
+impl<'a> ReadableFormatter for Redeemers<'a, v1::ScriptPurpose<'a>> {
+    fn format_readable(&self) -> String {
+        if self.0.is_empty() {
+            return "(none)".to_string();
+        }
+
+        let mut result = String::new();
+
+        for (i, (purpose, redeemer)) in self.0.iter().enumerate() {
+            result.push_str(&format!("[{}] {}\n", i, purpose.format_readable()));
+            result.push_str(&format!("    Index: {}\n", redeemer.index));
+            result.push_str(&format!("    Data: {}\n", redeemer.data.format_readable()));
+            result.push_str(&format!(
+                "    Ex Units: {} steps, {} mem\n",
+                redeemer.ex_units.steps, redeemer.ex_units.mem
+            ));
+
+            if i < self.0.len() - 1 {
+                result.push('\n');
+            }
+        }
+
+        result
+    }
+}
+
+impl<'a> ReadableFormatter for v1::ScriptPurpose<'a> {
+    fn format_readable(&self) -> String {
+        match self {
+            v1::ScriptPurpose::Spending(input) => format!("Spend({})", input.format_readable()),
+            v1::ScriptPurpose::Minting(policy) => format!("Mint({})", hex::encode(policy)),
+            v1::ScriptPurpose::Certifying(cert) => {
+                format!("Certificate({})", cert.format_readable())
+            }
+            v1::ScriptPurpose::Rewarding(credential) => {
+                format!("Reward({}", credential.format_readable())
+            }
         }
     }
 }
